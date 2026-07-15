@@ -2,7 +2,7 @@ name: Refresh MG dashboard data4
 
 on:
   schedule:
-    - cron: '5,35 * * * *'      # every 30 min (GitHub may delay a few min under load)
+    - cron: '*/15 * * * *'      # ask every 15 min so GitHub's scheduler throttling still yields ~30-min freshness
   workflow_dispatch: {}          # manual "Run workflow" button
 
 concurrency:

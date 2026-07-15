@@ -20,17 +20,31 @@ POST_START = "2026-07-01"; PRE_END = "2026-06-30"      # PRE ends the day before
 LAUNCH = datetime.datetime(2026, 7, 1, 9, 0)
 CONN_DAYS = 14
 
+import time as _time
+def _open_retry(req, timeout, tries=4):
+    """urlopen with retry on transient failures (5xx / 429 / timeouts / conn errors)."""
+    last=None
+    for i in range(tries):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout).read().decode()
+        except Exception as e:
+            last=e; code=getattr(e,"code",None)
+            if code is not None and code<500 and code!=429:
+                raise                                 # real 4xx -> don't retry
+            if i<tries-1: _time.sleep(3*(i+1))
+    raise last
+
 def sb(q, ref):
     r = urllib.request.Request(f"https://api.supabase.com/v1/projects/{ref}/database/query",
         data=json.dumps({"query": q}).encode(),
         headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
-    return json.loads(urllib.request.urlopen(r, timeout=60).read().decode())
+    return json.loads(_open_retry(r, 60))
 
 def mb(q):
     r = urllib.request.Request("https://metabase.wiom.in/api/dataset",
         data=json.dumps({"database": 113, "type": "native", "native": {"query": q}}).encode(),
         headers={"x-api-key": MB_KEY, "Content-Type": "application/json"})
-    j = json.loads(urllib.request.urlopen(r, timeout=200).read().decode())
+    j = json.loads(_open_retry(r, 200))
     return j["data"]["rows"] if j.get("data") else j
 
 def enrolled_partners():
