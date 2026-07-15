@@ -451,13 +451,13 @@ def _grp(rows, idx_key, g_idx, keymap=None):
             "tat_ta": t_ta, "tat_sc": t_sc, "tat_ca": t_ca, "tat_ai": t_ai}
     return out
 
-def mg_cohorts_sql(vals, d_from, yest):
-    return _base_csp(vals, d_from, yest) + """
+def mg_cohorts_sql(vals, d_from, yest, gh_where=''):
+    return _base_csp(vals, d_from, yest) + f"""
 SELECT mgpid,
   SUM(IFF(cur_depth>=2,1,0)) received,
   SUM(IFF(cur_depth>=4 AND (conf48=1 OR asgn48=1 OR reached48=1 OR inst48=1),1,0)) confirmed,
   SUM(IFF(cur_depth>=7 AND inst48=1,1,0)) installed
-FROM base WHERE coh='E' AND period='POST' AND mgpid IS NOT NULL GROUP BY 1"""
+FROM base WHERE coh='E' AND period='POST' AND mgpid IS NOT NULL {gh_where} GROUP BY 1"""
 
 _MG_GATE = 0.60          # >=3 leads: install-conversion gate to keep the guarantee
 _TOO_EARLY_DAYS = 7      # < this many live days -> projection too noisy, held as actuals
@@ -467,11 +467,11 @@ def _mg_class(conf, inst):
     if conf and inst / conf >= _MG_GATE: return "mg_hi"
     return "no_mg"
 
-def mg_cohorts(vals, d_from, yest, nmap, remaining):
+def mg_cohorts(vals, d_from, yest, nmap, remaining, gh_where=''):
     """Per enrolled CSP -> (actual, projected) MG cohort. lead = Cx-confirmed (matured); conv = installs/confirmed.
        ACTUAL: to-date leads. PROJECTED (pro-rata to month-end): leads*(elapsed+remaining)/elapsed; conversion is
        scale-invariant so only the <3 line moves; CSPs with < _TOO_EARLY_DAYS live days held as 'too_early' actuals."""
-    rows = mb(mg_cohorts_sql(vals, d_from, yest))
+    rows = mb(mg_cohorts_sql(vals, d_from, yest, gh_where))
     per = {p: (0, 0, 0) for p in nmap}     # received, confirmed, installed
     if not isinstance(rows, dict):
         for pid, recv, conf, inst in rows:
@@ -578,6 +578,10 @@ def compute_dash4():
     mg_map, mg_counts, mgp_map, mgp_counts, mg_proj_totals = mg_cohorts(vals0, d_from, yest.isoformat(), nmap, remaining)
     vals = _values_map(ad, cat, eng, f2set, mg_map)                             # mg = ACTUAL class, for main cuts
     vals_proj = _values_map(ad, cat, eng, f2set, mgp_map)                       # mg = PROJECTED class, for light cuts
+    _GHW = "AND (bflow NOT IN ('G','H') OR bflow IS NULL)"                       # gate re-run on non-G/H bookings
+    mg_map_g, mg_counts_g, mgp_map_g, mgp_counts_g, mg_proj_totals_g = mg_cohorts(vals0, d_from, yest.isoformat(), nmap, remaining, _GHW)
+    vals_g = _values_map(ad, cat, eng, f2set, mg_map_g)
+    vals_proj_g = _values_map(ad, cat, eng, f2set, mgp_map_g)
     rows = mb(cuts_sql(vals, d_from, yest.isoformat()))
     if isinstance(rows, dict):
         raise RuntimeError("cuts query error: " + json.dumps(rows)[:300])
@@ -655,8 +659,13 @@ def compute_dash4():
         except Exception:
             return None
     out["csp"] = _try(lambda: cuts_sql_csp(vals, d_from, yest.isoformat()))
-    out["noGH"] = _try(lambda: cuts_sql(vals, d_from, yest.isoformat(), _GH))
-    out["csp_noGH"] = _try(lambda: cuts_sql_csp(vals, d_from, yest.isoformat(), _GH))
+    out["noGH"] = _try(lambda: cuts_sql(vals_g, d_from, yest.isoformat(), _GH))
+    out["csp_noGH"] = _try(lambda: cuts_sql_csp(vals_g, d_from, yest.isoformat(), _GH))
+    for _k in ("noGH", "csp_noGH"):
+        if out.get(_k):
+            out[_k]["mg_counts"] = mg_counts_g
+            out[_k]["mgp_counts"] = mgp_counts_g
+            out[_k]["mg_proj_totals"] = mg_proj_totals_g
     def assemble_mgp(cutrows):
         g = _grp_mg(cutrows)
         return [{"key": k, "label": L,
@@ -670,8 +679,8 @@ def compute_dash4():
     try:
         out["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql(vals_proj, d_from, yest.isoformat())))
         if out.get("csp"): out["csp"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql_csp(vals_proj, d_from, yest.isoformat())))
-        if out.get("noGH"): out["noGH"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql(vals_proj, d_from, yest.isoformat(), _GH)))
-        if out.get("csp_noGH"): out["csp_noGH"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql_csp(vals_proj, d_from, yest.isoformat(), _GH)))
+        if out.get("noGH"): out["noGH"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql(vals_proj_g, d_from, yest.isoformat(), _GH)))
+        if out.get("csp_noGH"): out["csp_noGH"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql_csp(vals_proj_g, d_from, yest.isoformat(), _GH)))
     except Exception:
         out["tab_mg_proj"] = None
     out["mgp_counts"] = mgp_counts
