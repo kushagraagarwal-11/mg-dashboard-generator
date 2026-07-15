@@ -1,0 +1,52 @@
+name: Refresh MG dashboard data4
+
+on:
+  schedule:
+    - cron: '5,35 * * * *'      # every 30 min (GitHub may delay a few min under load)
+  workflow_dispatch: {}          # manual "Run workflow" button
+
+concurrency:
+  group: refresh-mg-data4
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate data4.json from live warehouse data
+        env:
+          MB_KEY: ${{ secrets.MB_KEY }}
+          SB_TOKEN: ${{ secrets.SB_TOKEN }}
+          CT_ACC: ${{ secrets.CT_ACC }}
+          CT_PASS: ${{ secrets.CT_PASS }}
+        run: python generate_data4.py
+
+      - name: Publish data4.json to the public Pages repo (deploy key)
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git clone --depth 1 "git@github.com:kushagraagarwal-11/mg-dashboard.git" pub
+          cp data4.json pub/data4.json
+          cd pub
+          git config user.email "actions@github.com"
+          git config user.name "mg-dashboard-bot"
+          if git diff --quiet -- data4.json; then
+            echo "No change — nothing to publish."
+          else
+            git add data4.json
+            git commit -m "data4 refresh $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+            echo "Published."
+          fi
