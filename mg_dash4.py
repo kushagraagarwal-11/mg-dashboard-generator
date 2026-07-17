@@ -602,7 +602,8 @@ def compute_dash4():
     def _isf2(p): return p in f2set
     non_days = (yest - datetime.date.fromisoformat(LAUNCH_D)).days + 1
 
-    def assemble(rws):
+    def assemble(rws, mgm=None):
+        _mgm = mgm if mgm is not None else mg_map
         a = {}
         coh = _grp(rws, "coh", 0)
         a["tab1"] = {"enr": enrich(coh.get("E"), cspdays(lambda p: True), len(nmap)),
@@ -632,9 +633,9 @@ def compute_dash4():
         a["targeted"] = csps(targ)
         mgc = _grp(rws, "mg", 8)
         a["tab_mg"] = [{"key": k, "label": L,
-                        "csps": csps(lambda p, k=k: mg_map.get(p) == k),
-                        "data": enrich(mgc.get(k), cspdays(lambda p, k=k: mg_map.get(p) == k),
-                                       csps(lambda p, k=k: mg_map.get(p) == k))}
+                        "csps": csps(lambda p, k=k: _mgm.get(p) == k),
+                        "data": enrich(mgc.get(k), cspdays(lambda p, k=k: _mgm.get(p) == k),
+                                       csps(lambda p, k=k: _mgm.get(p) == k))}
                        for k, L in (("mg_lo", "Getting MG · <3 leads"),
                                     ("mg_hi", "Getting MG · ≥3 leads"),
                                     ("no_mg", "Not getting MG"))]
@@ -652,26 +653,27 @@ def compute_dash4():
     except Exception:
         out["non_csps"] = None
     _GH = "AND (bflow NOT IN ('G','H') OR bflow IS NULL)"
-    def _try(fn):
+    def _try(fn, mgm=None):
         try:
             r = mb(fn())
-            return assemble(r) if not isinstance(r, dict) else None
+            return assemble(r, mgm) if not isinstance(r, dict) else None
         except Exception:
             return None
     out["csp"] = _try(lambda: cuts_sql_csp(vals, d_from, yest.isoformat()))
-    out["noGH"] = _try(lambda: cuts_sql(vals_g, d_from, yest.isoformat(), _GH))
-    out["csp_noGH"] = _try(lambda: cuts_sql_csp(vals_g, d_from, yest.isoformat(), _GH))
+    out["noGH"] = _try(lambda: cuts_sql(vals_g, d_from, yest.isoformat(), _GH), mg_map_g)
+    out["csp_noGH"] = _try(lambda: cuts_sql_csp(vals_g, d_from, yest.isoformat(), _GH), mg_map_g)
     for _k in ("noGH", "csp_noGH"):
         if out.get(_k):
             out[_k]["mg_counts"] = mg_counts_g
             out[_k]["mgp_counts"] = mgp_counts_g
             out[_k]["mg_proj_totals"] = mg_proj_totals_g
-    def assemble_mgp(cutrows):
+    def assemble_mgp(cutrows, mgpm=None):
+        _mgpm = mgpm if mgpm is not None else mgp_map
         g = _grp_mg(cutrows)
         return [{"key": k, "label": L,
-                 "csps": csps(lambda p, k=k: mgp_map.get(p) == k),
-                 "data": enrich(g.get(k), cspdays(lambda p, k=k: mgp_map.get(p) == k),
-                                csps(lambda p, k=k: mgp_map.get(p) == k))}
+                 "csps": csps(lambda p, k=k: _mgpm.get(p) == k),
+                 "data": enrich(g.get(k), cspdays(lambda p, k=k: _mgpm.get(p) == k),
+                                csps(lambda p, k=k: _mgpm.get(p) == k))}
                 for k, L in (("mg_lo", "Getting MG · <3 leads"),
                              ("mg_hi", "Getting MG · ≥3 leads"),
                              ("no_mg", "Not getting MG"),
@@ -679,8 +681,8 @@ def compute_dash4():
     try:
         out["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql(vals_proj, d_from, yest.isoformat())))
         if out.get("csp"): out["csp"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql_csp(vals_proj, d_from, yest.isoformat())))
-        if out.get("noGH"): out["noGH"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql(vals_proj_g, d_from, yest.isoformat(), _GH)))
-        if out.get("csp_noGH"): out["csp_noGH"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql_csp(vals_proj_g, d_from, yest.isoformat(), _GH)))
+        if out.get("noGH"): out["noGH"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql(vals_proj_g, d_from, yest.isoformat(), _GH)), mgp_map_g)
+        if out.get("csp_noGH"): out["csp_noGH"]["tab_mg_proj"] = assemble_mgp(mb(mg_only_cuts_sql_csp(vals_proj_g, d_from, yest.isoformat(), _GH)), mgp_map_g)
     except Exception:
         out["tab_mg_proj"] = None
     out["mgp_counts"] = mgp_counts
