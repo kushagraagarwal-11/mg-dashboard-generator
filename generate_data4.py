@@ -5,6 +5,14 @@ Pages repo (kushagraagarwal-11/mg-dashboard) by the GitHub Action.
 Env required: MB_KEY, SB_TOKEN, CT_ACC, CT_PASS.
 Replaces the deleted Railway wall as the data backend (static JSON, $0, unlimited
 public-repo Actions minutes)."""
+# --- Night pause 00:00-06:00 IST: skip to cut key-972 overnight warehouse cost (warehouse request, Nov 2026).
+# Clean no-op exit; the published JSON keeps last night's copy and the first run at/after 06:00 IST refills it.
+# FORCE_NIGHT=1 overrides.
+import os as _np_os, sys as _np_sys, datetime as _np_dt
+if _np_os.environ.get("FORCE_NIGHT") != "1" and _np_dt.datetime.now(_np_dt.timezone(_np_dt.timedelta(hours=5, minutes=30))).hour < 6:
+    print("night pause (00:00-06:00 IST): skipping to cut key-972 warehouse cost", flush=True)
+    _np_sys.exit(0)
+# ---
 import json, mg_dash4
 
 d = mg_dash4.compute_dash4()
